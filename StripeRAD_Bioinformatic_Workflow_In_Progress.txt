@@ -1,0 +1,824 @@
+This is the full and detailed protcol for the StripeRAD(Striped SeaGrant project) it includes the bioinformatic steps for running the data produced for thsi project.
+
+The bioinformatic protocols include ALL necessary files (sample barcodes, plate barcodes, pop_maps, etc) needed to run the entirety of the STACKS pipeline and run the downstream analyses.
+
+
+
+{Bioinformatic Pipline}
+
+Step 1: Run FASTQC on raw data. 
+
+	- Check "Per base sequence quality" and "Adapter Content" as most important factors
+	- Command:
+
+		fastqc /path/to/raw/read_1/file.fq.gz
+		fastqc /path/to/raw/read_2/file.fq.gz
+
+
+Step 2: Demultiplex samples accorsing to i7 index groups (also called "Plate Barcode")
+	
+	- Use process_radtags to do this.
+	- Do NOT use any filtering on this step!
+
+
+{Library 1}
+
+#!/bin/bash
+
+#SBATCH --job-name="process_index"
+#SBATCH --nodes=1
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=kristopher.wojtusik@unh.edu
+
+module purge
+
+module load anaconda/colsa
+
+conda activate stacks-2.4
+
+##Index1
+
+process_radtags -P -i gzfastq -1 /mnt/home/mel/kwojtusik/StripeRAD/library_1/raw/Itru_1/Itru_1_CKDL190141718-1a-AK3905_H55VFBBXX_L6_1.fq.gz -2 /mnt/home/mel/kwojtusik/StripeRAD/library_1/raw/Itru_1/Itru_1_CKDL190141718-1a-AK3905_H55VFBBXX_L6_2.fq.gz -o /mnt/home/mel/kwojtusik/StripeRAD/library_1/demulti_index  -b /mnt/home/mel/kwojtusik/StripeRAD/library_1/info/Lib_1_i7_index_2.txt -r -D --index_null --disable_rad_check --retain_header &> process_radtags_2.oe
+
+###Index2
+
+process_radtags -P -i gzfastq -1 /mnt/home/mel/kwojtusik/StripeRAD/library_1/raw/Itru_2/Itru_2_CKDL190141718-1a-AK7761_H55VFBBXX_L6_1.fq.gz -2 /mnt/home/mel/kwojtusik/StripeRAD/library_1/raw/Itru_2/Itru_2_CKDL190141718-1a-AK7761_H55VFBBXX_L6_2.fq.gz -o /mnt/home/mel/kwojtusik/StripeRAD/library_1/demulti_index  -b /mnt/home/mel/kwojtusik/StripeRAD/library_1/info/Lib_1_i7_index_3.txt -r -D --index_null --disable_rad_check --retain_header &> process_radtags_3.oe
+
+
+###Index3
+process_radtags -P -i gzfastq -1 /mnt/home/mel/kwojtusik/StripeRAD/library_1/raw/Itru_3/Itru_3_CKDL190141718-1a-AK9141_H55VFBBXX_L6_1.fq.gz -2 /mnt/home/mel/kwojtusik/StripeRAD/library_1/raw/Itru_3/Itru_3_CKDL190141718-1a-AK9141_H55VFBBXX_L6_2.fq.gz -o /mnt/home/mel/kwojtusik/StripeRAD/library_1/demulti_index  -b /mnt/home/mel/kwojtusik/StripeRAD/library_1/info/Lib_1_i7_index_1.txt -r -D --index_null --disable_rad_check --retain_header &> process_radtags_1.oe
+
+**** Novogene demultiplexed this library down to Index groups BUT miss named the files. So Itru_1_CKDL.....is actaully i7 Index Group 2, Itru_2_CKDL...is actually i7 Index Group 3, and Itru_3_CKDL...is actually i7 Index Group 1. By running the above code, you will rassign them to the proper name. 
+
+			-P: paired-end option
+			-i: input file type (gzfastq) 
+			-1: Read_1 file
+			-2: Read_2 file
+			-o: output directory
+			-b: barcode file (use i7 Plate barcodes)
+			-r: Rescue barcodes with 1 base difference from barcodes
+			-D: Capture discarded reads to a file
+			--index_null: Barcode is in the header of read file 
+			--disable_rad_check: disables checking for intact rad cut site (does not need to check for cut site in this step because it is just sorting samples in plate/index groups)
+			--retain_header: retains unmodified fastq headers in output file 
+
+	- Use a plate barcode file for "-b"	command. 
+		- Plate (i7) barcodes need to be reverse complimented in order for process_radtags to work
+		- Need to be formatted so that the barcodes are listed first and then the sample ID is 1 tab away.
+
+### Plate barcodes for Library 1 (reverse complimented from IDT oligo spreadsheet, this happens because of how sequencing happens). Use these to make a barcode file (-b option in process_radtags)
+
+ACGTTACC	Lib_1_i7_1
+CTGTGTTG	Lib_1_i7_2
+TGAGGTGT	Lib_1_i7_3	
+GATCCATG	Lib_2_i7_4
+GCCTATCA	Lib_2_i7_5
+AACAACCG	Lib_2_i7_6
+ACTCGTTG	Lib_3_i7_7
+CCTATGGT	Lib_3_i7_8
+TGTACACC	Lib_3_i7_9
+
+
+Step 3: Filter PCR clones
+	- Did not clone filter Library_1 because of indexing issue that happened during sequencing, i5 indices were not recovered and library could not be decloned.
+	- Use the clone_filter in STACKS to filter out PCR clones before demultiplexing samples
+	- Run it on the demultiplexed index groups. If you run it on the Raw reads it will dump the core on premise because it will run out of memory.
+
+#!/bin/bash
+#SBATCH --job-name="clone_filter_L2_L3"
+#SBATCH --nodes=1
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=kristopher.wojtusik@unh.edu
+
+module purge
+
+module load anaconda/colsa
+
+conda activate stacks-2.4
+
+### Library_2
+
+clone_filter -P -i gzfastq -o /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/decloned --null_index --oligo_len_2 8 -1 /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/i7_index/Itru_4.1.fq.gz -2 /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/i7_index/Itru_4.2.fq.gz &> clone_filter_4.oe
+
+clone_filter -P -i gzfastq -o /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/decloned --null_index --oligo_len_2 8 -1 /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/i7_index/Itru_5.1.fq.gz -2 /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/i7_index/Itru_5.2.fq.gz &> clone_filter_5.oe
+
+clone_filter -P -i gzfastq -o /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/decloned --null_index --oligo_len_2 8 -1 /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/i7_index/Itru_6.1.fq.gz -2 /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/i7_index/Itru_6.2.fq.gz &> clone_filter_6.oe
+
+### Library_3
+
+clone_filter -P -i gzfastq -o /mnt/lustre/mel/kwojtusik/StripeRAD/library_3/decloned --null_index --oligo_len_2 8 -1 /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/i7_index/Itru_7.1.fq.gz -2 /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/i7_index/Itru_7.2.fq.gz &> clone_filter_7.oe
+
+clone_filter -P -i gzfastq -o /mnt/lustre/mel/kwojtusik/StripeRAD/library_3/decloned --null_index --oligo_len_2 8 -1 /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/i7_index/Itru_8.1.fq.gz -2 /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/i7_index/Itru_8.2.fq.gz &> clone_filter_8.oe
+
+clone_filter -P -i gzfastq -o /mnt/lustre/mel/kwojtusik/StripeRAD/library_3/decloned --null_index --oligo_len_2 8 -1 /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/i7_index/Itru_9.1.fq.gz -2 /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/i7_index/Itru_9.2.fq.gz &> clone_filter_9.oe
+
+		-P: paired-end option
+		-i: file input type (g-zipped fastq)
+		-o: output directory
+		--null_index: STACKS will look for the random 8N index (i5) in the header, in the second position, next to the i7 index
+		--oligo_len_2: Length of random oligo for paired reads
+		-1: Read 1 file
+		-2: Read 2 file
+
+
+Step 4: Run process_radtags on plate groups to demultiplex samples. 
+	- Will need to have a separate barcode file if the same barcodes are used for two different samples (this is going to be the case when more than 96 samples are run in 1 lane of sequencing)
+	- Make sure reads come from decloned directory
+	
+#!/bin/bash
+#SBATCH --job-name="process_sample_test"
+#SBATCH --nodes=1
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=kristopher.wojtusik@unh.edu
+
+module purge
+
+module load anaconda/colsa
+
+conda activate stacks-2.4
+
+
+#### Library_1
+process_radtags -P -i gzfastq -1 /mnt/lustre/mel/kwojtusik/StripeRAD/library_1/i7_index/Lib_1_i7_1.1.fq.gz -2  /mnt/lustre/mel/kwojtusik/StripeRAD/library_1/i7_index/Lib_1_i7_1.2.fq.gz \
+-o /mnt/lustre/mel/kwojtusik/StripeRAD/tests/demulti_samples_trim_only -b /mnt/lustre/mel/kwojtusik/StripeRAD/info/barcode_I1_I2.txt -q -c -D -t 140 --filter_illumina -r --inline_inline --renz_1 xbaI --renz_2 ecoRI --retain_header &> process_radtags_plate_1_trim.oe
+
+process_radtags -P -i gzfastq -1 /mnt/lustre/mel/kwojtusik/StripeRAD/library_1/i7_index/Lib_1_i7_2.1.fq.gz -2  /mnt/lustre/mel/kwojtusik/StripeRAD/library_1/i7_index/Lib_1_i7_2.2.fq.gz \
+-o /mnt/lustre/mel/kwojtusik/StripeRAD/tests/demulti_samples_trim_only -b /mnt/lustre/mel/kwojtusik/StripeRAD/info/barcode_I1_I2.txt -q -c -D -t 140 --filter_illumina -r --inline_inline --renz_1 xbaI --renz_2 ecoRI &> process_radtags_plate_2_trim.oe
+
+process_radtags -P -i gzfastq -1 /mnt/lustre/mel/kwojtusik/StripeRAD/library_1/i7_index/Lib_1_i7_3.1.fq.gz -2  /mnt/lustre/mel/kwojtusik/StripeRAD/library_1/i7_index/Lib_1_i7_3.2.fq.gz \
+-o /mnt/lustre/mel/kwojtusik/StripeRAD/tests/demulti_samples_trim_only -b /mnt/lustre/mel/kwojtusik/StripeRAD/info/barcode_I3.txt -q -c -D -t 140 --filter_illumina -r --inline_inline --renz_1 xbaI --renz_2 ecoRI &> process_radtags_plate_3_trim.oe
+
+
+
+###Library_2
+process_radtags -P -i gzfastq -1 /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/decloned/Itru_4.1.1.fq.gz -2  /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/decloned/Itru_4.2.2.fq.gz \
+-o /mnt/lustre/mel/kwojtusik/StripeRAD/tests/demulti_samples_trim_only -b /mnt/lustre/mel/kwojtusik/StripeRAD/info/barcode_L2_i4_i5.txt -q -c -D -t 140 --filter_illumina -r --inline_inline --renz_1 xbaI --renz_2 ecoRI --retain_header &> process_radtags_plate_4_trim.oe
+
+process_radtags -P -i gzfastq -1 /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/decloned/Itru_5.1.1.fq.gz -2  /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/decloned/Itru_5.2.2.fq.gz \
+-o /mnt/lustre/mel/kwojtusik/StripeRAD/tests/demulti_samples_trim_only -b /mnt/lustre/mel/kwojtusik/StripeRAD/info/barcode_L2_i4_i5.txt -q -c -D -t 140 --filter_illumina -r --inline_inline --renz_1 xbaI --renz_2 ecoRI --retain_header &> process_radtags_plate_5_trim.oe
+	
+process_radtags -P -i gzfastq -1 /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/decloned/Itru_6.1.1.fq.gz -2  /mnt/lustre/mel/kwojtusik/StripeRAD/library_2/decloned/Itru_6.2.2.fq.gz \
+-o /mnt/lustre/mel/kwojtusik/StripeRAD/tests/demulti_samples_trim_only -b /mnt/lustre/mel/kwojtusik/StripeRAD/info/barcode_L2_i6.txt -q -c -D -t 140 --filter_illumina -r --inline_inline --renz_1 xbaI --renz_2 ecoRI --retain_header &> process_radtags_plate_6_trim.oe
+
+
+
+###Library_3
+process_radtags -P -i gzfastq -1 /mnt/lustre/mel/kwojtusik/StripeRAD/library_3/decloned/Itru_7.1.1.fq.gz -2  /mnt/lustre/mel/kwojtusik/StripeRAD/library_3/decloned/Itru_7.2.2.fq.gz \
+-o /mnt/lustre/mel/kwojtusik/StripeRAD/tests/demulti_samples_trim_only -b /mnt/lustre/mel/kwojtusik/StripeRAD/info/barcode_L3_i7_i8.txt -q -c -D -t 140 --filter_illumina -r --inline_inline --renz_1 xbaI --renz_2 ecoRI --retain_header &> process_radtags_plate_7_trim.oe
+
+process_radtags -P -i gzfastq -1 /mnt/lustre/mel/kwojtusik/StripeRAD/library_3/decloned/Itru_8.1.1.fq.gz -2  /mnt/lustre/mel/kwojtusik/StripeRAD/library_3/decloned/Itru_8.2.2.fq.gz \
+-o /mnt/lustre/mel/kwojtusik/StripeRAD/tests/demulti_samples_trim_only -b /mnt/lustre/mel/kwojtusik/StripeRAD/info/barcode_L3_i7_i8.txt -q -c -D -t 140 --filter_illumina -r --inline_inline --renz_1 xbaI --renz_2 ecoRI --retain_header &> process_radtags_plate_8_trim.oe
+
+process_radtags -P -i gzfastq -1 /mnt/lustre/mel/kwojtusik/StripeRAD/library_3/decloned/Itru_9.1.1.fq.gz -2  /mnt/lustre/mel/kwojtusik/StripeRAD/library_3/decloned/Itru_9.2.2.fq.gz \
+-o /mnt/lustre/mel/kwojtusik/StripeRAD/tests/demulti_samples_trim_only -b /mnt/lustre/mel/kwojtusik/StripeRAD/info/barcode_L3_i9.txt -q -c -D -t 140 --filter_illumina -r --inline_inline --renz_1 xbaI --renz_2 ecoRI --retain_header &> process_radtags_plate_9_trim.oe
+
+
+			-P, -i, -1, -2, -o, -D, -r, --retain_header - options ask for the same thing as above
+			-q: discard reads with low quality scores
+			-c: clean data, discard any read with uncalled base (does not include barcode part of read)
+			-t truncate read to specified length (good for dealing with adapter contamination)
+			--filter_illumina: discard reads marked by illumna''s purity filter as failing
+			--inline_inline: search for sample barcodes in the sequence
+			--renz_1: restriction enzyme used, cutsite is on single read (read 1''s)
+			--renz_2: restriciton enzyme used, cutsite is on paired read (read 2''s)
+			--adapter_1: Sequence of adapter that may occur on single end
+			--adapter_2: Sequence of adapter that may occur on paired end
+
+
+
+
+
+Sample Barcodes - Use these to make a sample barcode file to demultiplex samples. Make sure the only things in the file are the barcodes and sample Id's. They need to separated by a tab. Each library should get 2 barcode files for demultiplexing because the barcodes are reused within and accross libraries, so they cannot be all lumped together. Index 1 and Index 2 can go together, Index 3 needs it's own file. Index 4 and Index 5 can go together but Index 6 needs its own file. Index 7 and INdex 8 can go together but Index 9 needs its own file.
+
+
+Library 1  
+
+	### Sample barcode used to demultiplex samples. Index (plate) group 1 and 2 are in the same barcode file because they are the first 96 samples of the library and there is no repeat barcode combinations. 
+	
+	Index Group 1							Index Group 2
+	CCGAATA	CTAACGC	P_32					CCGAATA	CACATGTCC	D_7129		
+	CCGAATA	TCGGTACC	H_45				CCGAATA	TGTGCACGAC	CR_9277		
+	CCGAATA	GATCGTTGC	P_31				CCGAATA	GCATCAC	UB_34		
+	CCGAATA	AGCTACACTC	H_65				CCGAATA	ATGCTGTC	UB_26		
+	CCGAATA	ACGCATC	H_35					CCGAATA	CATGACCTC	UB_23		
+	CCGAATA	GTATGCAC	H_17				CCGAATA	TGCAGTGAGC	D_7131		
+	TTAGGCAA	CTAACGC	C_4					TTAGGCAA	CACATGTCC	UB_28		
+	TTAGGCAA	TCGGTACC	H_9				TTAGGCAA	TGTGCACGAC	UB_18		
+	TTAGGCAA	GATCGTTGC	H_22			TTAGGCAA	GCATCAC	CR_9287		
+	TTAGGCAA	AGCTACACTC	P_19			TTAGGCAA	ATGCTGTC	UB_35		
+	TTAGGCAA	ACGCATC	P_14				TTAGGCAA	CATGACCTC	H_18		
+	TTAGGCAA	GTATGCAC	H_32			TTAGGCAA	TGCAGTGAGC	H_50		
+	AACTCGTCA	CTAACGC	P_13				AACTCGTCA	CACATGTCC	R_24		
+	AACTCGTCA	TCGGTACC	H_62			AACTCGTCA	TGTGCACGAC	H_41		
+	AACTCGTCA	GATCGTTGC	H_25			AACTCGTCA	GCATCAC	UB_46		
+	AACTCGTCA	AGCTACACTC	P_9				AACTCGTCA	ATGCTGTC	H_58		
+	AACTCGTCA	ACGCATC	H_51				AACTCGTCA	CATGACCTC	P_38		
+	AACTCGTCA	GTATGCAC	H_40			AACTCGTCA	TGCAGTGAGC	H_61		
+	GGTCTACGTA	CTAACGC	P_20				GGTCTACGTA	CACATGTCC	P_12		
+	GGTCTACGTA	TCGGTACC	D_7130			GGTCTACGTA	TGTGCACGAC	P_8		
+	GGTCTACGTA	GATCGTTGC	D_7121			GGTCTACGTA	GCATCAC	P_17		
+	GGTCTACGTA	AGCTACACTC	P_30			GGTCTACGTA	ATGCTGTC	UB_37		
+	GGTCTACGTA	ACGCATC	UB_12				GGTCTACGTA	CATGACCTC	P_5		
+	GGTCTACGTA	GTATGCAC	CR_9291			GGTCTACGTA	TGCAGTGAGC	CR_9288		
+	GATACCA	CTAACGC	P_28					GATACCA	CACATGTCC	P_16		
+	GATACCA	TCGGTACC	P_18				GATACCA	TGTGCACGAC	H_53		
+	GATACCA	GATCGTTGC	C_1					GATACCA	GCATCAC	UB_29		
+	GATACCA	AGCTACACTC	H_39				GATACCA	ATGCTGTC	UB_43		
+	GATACCA	ACGCATC	D_7127					GATACCA	CATGACCTC	D_7078		
+	GATACCA	GTATGCAC	UB_14				GATACCA	TGCAGTGAGC	R_2		
+	AGCGTTGA	CTAACGC	H_23				AGCGTTGA	CACATGTCC	H_64		
+	AGCGTTGA	TCGGTACC	UB_13			AGCGTTGA	TGTGCACGAC	D_7123		
+	AGCGTTGA	GATCGTTGC	P_29			AGCGTTGA	GCATCAC	D_7126		
+	AGCGTTGA	AGCTACACTC	UB_15			AGCGTTGA	ATGCTGTC	H_28		
+	AGCGTTGA	ACGCATC	P_37				AGCGTTGA	CATGACCTC	UB_17		
+	AGCGTTGA	GTATGCAC	D_7124			AGCGTTGA	TGCAGTGAGC	D_7004		
+	CTGCAACTA	CTAACGC	H_29				CTGCAACTA	CACATGTCC	P_11		
+	CTGCAACTA	TCGGTACC	H_54			CTGCAACTA	TGTGCACGAC	P_26		
+	CTGCAACTA	GATCGTTGC	D_7128			CTGCAACTA	GCATCAC	P_34		
+	CTGCAACTA	AGCTACACTC	H_26			CTGCAACTA	ATGCTGTC	R_27		
+	CTGCAACTA	ACGCATC	P_15				CTGCAACTA	CATGACCTC	H_66		
+	CTGCAACTA	GTATGCAC	P_23			CTGCAACTA	TGCAGTGAGC	UB_30		
+	TCATGGTCAA	CTAACGC	P_4					TCATGGTCAA	CACATGTCC	UB_3		
+	TCATGGTCAA	TCGGTACC	P_21			TCATGGTCAA	TGTGCACGAC	CR_9297		
+	TCATGGTCAA	GATCGTTGC	P_22			TCATGGTCAA	GCATCAC	UB_10		
+	TCATGGTCAA	AGCTACACTC	P_25			TCATGGTCAA	ATGCTGTC	UB_11		
+	TCATGGTCAA	ACGCATC	D_7122				TCATGGTCAA	CATGACCTC	CR_9295		
+	TCATGGTCAA	GTATGCAC	H_16			TCATGGTCAA	TGCAGTGAGC	H_36			
+
+	### Index (plate 3) group barcode list (need a separate barcode file for every full 96 well plate used, can only combine Index groups if you break a plate up)	
+
+	Index Group 3
+	CCGAATA	CTAACGC	CR_9290
+	CCGAATA	TCGGTACC	R_4
+	CCGAATA	GATCGTTGC	UB_40
+	CCGAATA	AGCTACACTC	P_36
+	CCGAATA	ACGCATC	D_7001
+	CCGAATA	GTATGCAC	H_59
+	CCGAATA	CACATGTCC	HR_7697
+	TTAGGCAA	CTAACGC	UB_25
+	TTAGGCAA	TCGGTACC	D_7132
+	TTAGGCAA	GATCGTTGC	H_57
+	TTAGGCAA	AGCTACACTC	UB_20
+	TTAGGCAA	ACGCATC	H_21
+	TTAGGCAA	GTATGCAC	C_3
+	TTAGGCAA	CACATGTCC	R_29
+	AACTCGTCA	CTAACGC	UB_24
+	AACTCGTCA	TCGGTACC	CR_9296
+	AACTCGTCA	GATCGTTGC	UB_27
+	AACTCGTCA	AGCTACACTC	HR_7708
+	AACTCGTCA	ACGCATC	R_22
+	AACTCGTCA	GTATGCAC	H_46
+	AACTCGTCA	CACATGTCC	D_7008
+	GGTCTACGTA	CTAACGC	UB_39
+	GGTCTACGTA	TCGGTACC	R_26
+	GGTCTACGTA	GATCGTTGC	P_10
+	GGTCTACGTA	AGCTACACTC	UC_7663
+	GGTCTACGTA	ACGCATC	D_7002
+	GGTCTACGTA	GTATGCAC	D_7025
+	GGTCTACGTA	CACATGTCC	R_3
+	GATACCA	CTAACGC	H_44
+	GATACCA	TCGGTACC	H_15
+	GATACCA	GATCGTTGC	H_8
+	GATACCA	AGCTACACTC	CR_9293
+	GATACCA	ACGCATC	D_6992
+	GATACCA	GTATGCAC	CR_9250
+	GATACCA	CACATGTCC	D_7138
+	AGCGTTGA	CTAACGC	D_7005
+	AGCGTTGA	TCGGTACC	P_24
+	AGCGTTGA	GATCGTTGC	K_3604
+	AGCGTTGA	AGCTACACTC	UB_38
+	AGCGTTGA	ACGCATC	D_7133
+	AGCGTTGA	GTATGCAC	CR_9248
+	AGCGTTGA	CACATGTCC	PX_4709
+	CTGCAACTA	CTAACGC	C_11
+	CTGCAACTA	TCGGTACC	CR_9294
+	CTGCAACTA	GATCGTTGC	HR_7581
+	CTGCAACTA	AGCTACACTC	UB_8
+	CTGCAACTA	ACGCATC	CR_9272
+	CTGCAACTA	GTATGCAC	R_6
+	CTGCAACTA	CACATGTCC	H_60
+	TCATGGTCAA	CTAACGC	UB_47
+	TCATGGTCAA	TCGGTACC	P_33
+	TCATGGTCAA	GATCGTTGC	CR_9289
+	TCATGGTCAA	AGCTACACTC	H_43
+	TCATGGTCAA	ACGCATC	D_7026
+	TCATGGTCAA	GTATGCAC	H_42
+	TCATGGTCAA	CACATGTCC	UB_21
+
+
+
+
+Library 2
+
+	Index Group 4 & 5
+	CCGAATG	CTAACGT	UB_7
+	CCGAATG	TCGGTACT	D_7033
+	CCGAATG	GATCGTTGT	HR_7698
+	CCGAATG	AGCTACACTT	UC_7635
+	CCGAATG	ACGCATT	UC_7671
+	CCGAATG	GTATGCAT	HR_7709
+	CCGAATG	CACATGTCT	UC_7669
+	CCGAATG	TGTGCACGAT	P_6
+	CCGAATG	GCATCAT	H_4
+	CCGAATG	ATGCTGTT	K_3625
+	CCGAATG	CATGACCTT	HR_7589
+	CCGAATG	TGCAGTGAGT	UC_7661
+	TTAGGCAG	CTAACGT	UC_7668
+	TTAGGCAG	TCGGTACT	R_9
+	TTAGGCAG	GATCGTTGT	H_47
+	TTAGGCAG	AGCTACACTT	CR_9270
+	TTAGGCAG	ACGCATT	R_5
+	TTAGGCAG	GTATGCAT	P_1
+	TTAGGCAG	CACATGTCT	K_3620
+	TTAGGCAG	TGTGCACGAT	UC_7670
+	TTAGGCAG	GCATCAT	R_8
+	TTAGGCAG	ATGCTGTT	H_11
+	TTAGGCAG	CATGACCTT	UC_7631
+	TTAGGCAG	TGCAGTGAGT	CR_9237
+	AACTCGTCG	CTAACGT	K_3622
+	AACTCGTCG	TCGGTACT	UC_7658
+	AACTCGTCG	GATCGTTGT	D_7134
+	AACTCGTCG	AGCTACACTT	D_7135
+	AACTCGTCG	ACGCATT	K_3630
+	AACTCGTCG	GTATGCAT	M_17_97
+	AACTCGTCG	CACATGTCT	K_3627
+	AACTCGTCG	TGTGCACGAT	UC_7672
+	AACTCGTCG	GCATCAT	H_13
+	AACTCGTCG	ATGCTGTT	K_3564
+	AACTCGTCG	CATGACCTT	C_17
+	AACTCGTCG	TGCAGTGAGT	D_7023
+	GGTCTACGTG	CTAACGT	HR_7578
+	GGTCTACGTG	TCGGTACT	UB_19
+	GGTCTACGTG	GATCGTTGT	P_35
+	GGTCTACGTG	AGCTACACTT	HR_7694
+	GGTCTACGTG	ACGCATT	HR_7579
+	GGTCTACGTG	GTATGCAT	CR_9262
+	GGTCTACGTG	CACATGTCT	D_7108
+	GGTCTACGTG	TGTGCACGAT	K_3592
+	GGTCTACGTG	GCATCAT	D_7136
+	GGTCTACGTG	ATGCTGTT	UB_1
+	GGTCTACGTG	CATGACCTT	CR_9234
+	GGTCTACGTG	TGCAGTGAGT	UC_7659
+	GATACCG	CTAACGT	R_7
+	GATACCG	TCGGTACT	UB_2
+	GATACCG	GATCGTTGT	CR_9235
+	GATACCG	AGCTACACTT	P_7
+	GATACCG	ACGCATT	H_12
+	GATACCG	GTATGCAT	K_3615
+	GATACCG	CACATGTCT	UC_7642
+	GATACCG	TGTGCACGAT	UC_7667
+	GATACCG	GCATCAT	UC_7654
+	GATACCG	ATGCTGTT	UC_7634
+	GATACCG	CATGACCTT	UC_7648
+	GATACCG	TGCAGTGAGT	K_3568
+	AGCGTTGG	CTAACGT	D_7032
+	AGCGTTGG	TCGGTACT	UB_31
+	AGCGTTGG	GATCGTTGT	H_27
+	AGCGTTGG	AGCTACACTT	D_7137
+	AGCGTTGG	ACGCATT	CR_9224
+	AGCGTTGG	GTATGCAT	UB_32
+	AGCGTTGG	CACATGTCT	UC_7646
+	AGCGTTGG	TGTGCACGAT	HR_7582
+	AGCGTTGG	GCATCAT	CR_9260
+	AGCGTTGG	ATGCTGTT	H_10
+	AGCGTTGG	CATGACCTT	HR_7588
+	AGCGTTGG	TGCAGTGAGT	H_5
+	CTGCAACTG	CTAACGT	UB_42
+	CTGCAACTG	TCGGTACT	R_10
+	CTGCAACTG	GATCGTTGT	UB_33
+	CTGCAACTG	AGCTACACTT	UC_7640
+	CTGCAACTG	ACGCATT	CR_9252
+	CTGCAACTG	GTATGCAT	D_7047
+	CTGCAACTG	CACATGTCT	HR_7586
+	CTGCAACTG	TGTGCACGAT	UB_22
+	CTGCAACTG	GCATCAT	K_3628
+	CTGCAACTG	ATGCTGTT	HR_7701
+	CTGCAACTG	CATGACCTT	CR_9232
+	CTGCAACTG	TGCAGTGAGT	UC_7643
+	TCATGGTCAG	CTAACGT	D_7003
+	TCATGGTCAG	TCGGTACT	R_1
+	TCATGGTCAG	GATCGTTGT	R_34
+	TCATGGTCAG	AGCTACACTT	HR_7585
+	TCATGGTCAG	ACGCATT	UB_41
+	TCATGGTCAG	GTATGCAT	UC_7636
+	TCATGGTCAG	CACATGTCT	CR_9233
+	TCATGGTCAG	TGTGCACGAT	D_7107
+	TCATGGTCAG	GCATCAT	UC_7641
+	TCATGGTCAG	ATGCTGTT	R_18
+	TCATGGTCAG	CATGACCTT	UC_7673
+	TCATGGTCAG	TGCAGTGAGT	UC_7660G
+
+
+	Index Group 6
+	CCGAATG	CTAACGT	H_7
+	CCGAATG	TCGGTACT	CAN_05
+	CCGAATG	GATCGTTGT	K_3572
+	CCGAATG	AGCTACACTT	SH_518_98
+	CCGAATG	ACGCATT	M_17_98
+	CCGAATG	GTATGCAT	SH_54_97
+	CCGAATG	CACATGTCT	UC_7656
+	TTAGGCAG	CTAACGT	M_19_98
+	TTAGGCAG	TCGGTACT	UC_7651
+	TTAGGCAG	GATCGTTGT	D_7096
+	TTAGGCAG	AGCTACACTT	M_13
+	TTAGGCAG	ACGCATT	CAN_17
+	TTAGGCAG	GTATGCAT	SH_56
+	TTAGGCAG	CACATGTCT	HR_7714
+	AACTCGTCG	CTAACGT	M_20_98
+	AACTCGTCG	TCGGTACT	H_14
+	AACTCGTCG	GATCGTTGT	HR_7705
+	AACTCGTCG	AGCTACACTT	H_6
+	AACTCGTCG	ACGCATT	M_15_98
+	AACTCGTCG	GTATGCAT	K_3610
+	AACTCGTCG	CACATGTCT	SH_52_97
+	GGTCTACGTG	CTAACGT	UC_7666
+	GGTCTACGTG	TCGGTACT	D_7019
+	GGTCTACGTG	GATCGTTGT	K_3614
+	GGTCTACGTG	AGCTACACTT	K_3616
+	GGTCTACGTG	ACGCATT	HR_7590
+	GGTCTACGTG	GTATGCAT	UC_7647
+	GGTCTACGTG	CACATGTC	UC_7639
+	GATACCG	CTAACGT	CAN_03
+	GATACCG	TCGGTACT	SH_516_97
+	GATACCG	GATCGTTGT	UB_4
+	GATACCG	AGCTACACTT	SH_51_97
+	GATACCG	ACGCATT	K_3596
+	GATACCG	GTATGCAT	UC_7633
+	GATACCG	CACATGTCT	K_3624
+	AGCGTTGG	CTAACGT	SH_51_98
+	AGCGTTGG	TCGGTACT	SH_53_97
+	AGCGTTGG	GATCGTTGT	SH_517
+	AGCGTTGG	AGCTACACTT	R_25
+	AGCGTTGG	ACGCATT	CAN_01
+	AGCGTTGG	GTATGCAT	HR_7690
+	AGCGTTGG	CACATGTCT	M_2_97
+	CTGCAACTG	CTAACGT	D_7034
+	CTGCAACTG	TCGGTACT	HR_7704
+	CTGCAACTG	GATCGTTGT	UC_7657
+	CTGCAACTG	AGCTACACTT	M_11
+	CTGCAACTG	ACGCATT	K_3629
+	CTGCAACTG	GTATGCAT	K_3574
+	CTGCAACTG	CACATGTCT	CAN_10
+	TCATGGTCAG	CTAACGT	K_3612
+	TCATGGTCAG	TCGGTACT	CR_9263
+	TCATGGTCAG	GATCGTTGT	CAN_11
+	TCATGGTCAG	AGCTACACTT	HR_7699
+	TCATGGTCAG	ACGCATT	UC_7665
+	TCATGGTCAG	GTATGCAT	SH_519_98
+	TCATGGTCAG	CACATGTCT	CR_9265
+
+
+
+
+Library 3
+
+	Index Group 7 & 8
+	CCGAATG	CTAACGT	UC_7637
+	CCGAATG	TCGGTACT	SH_510
+	CCGAATG	GATCGTTGT	CAN_20
+	CCGAATG	AGCTACACTT	H_3
+	CCGAATG	ACGCATT	CAN_09
+	CCGAATG	GTATGCAT	SH_511
+	CCGAATG	CACATGTCT	K_3600
+	CCGAATG	TGTGCACGAT	CAN_29
+	CCGAATG	GCATCAT	CR_9280
+	CCGAATG	ATGCTGTT	UC_7645
+	CCGAATG	CATGACCTT	UC_7652
+	CCGAATG	TGCAGTGAGT	M_2_98
+	TTAGGCAG	CTAACGT	SH_514_98
+	TTAGGCAG	TCGGTACT	HR_7682
+	TTAGGCAG	GATCGTTGT	CR_9284
+	TTAGGCAG	AGCTACACTT	SH_516_98
+	TTAGGCAG	ACGCATT	CAN_06
+	TTAGGCAG	GTATGCAT	CAN_19
+	TTAGGCAG	CACATGTCT	K_2993
+	TTAGGCAG	TGTGCACGAT	K_3618
+	TTAGGCAG	GCATCAT	HR_7693
+	TTAGGCAG	ATGCTGTT	UC_7675
+	TTAGGCAG	CATGACCTT	CAN_26
+	TTAGGCAG	TGCAGTGAGT	M_6_97
+	AACTCGTCG	CTAACGT	SH_515_98
+	AACTCGTCG	TCGGTACT	SH_55
+	AACTCGTCG	GATCGTTGT	SH_59
+	AACTCGTCG	AGCTACACTT	SH_57_98
+	AACTCGTCG	ACGCATT	CAN_30
+	AACTCGTCG	GTATGCAT	D_7103
+	AACTCGTCG	CACATGTCT	CR_9229
+	AACTCGTCG	TGTGCACGAT	M_16_98
+	AACTCGTCG	GCATCAT	UC_7664
+	AACTCGTCG	ATGCTGTT	M_14
+	AACTCGTCG	CATGACCTT	CAN_27
+	AACTCGTCG	TGCAGTGAGT	CR_9283
+	GGTCTACGTG	CTAACGT	HR_7706
+	GGTCTACGTG	TCGGTACT	CAN_25
+	GGTCTACGTG	GATCGTTGT	M_12_97
+	GGTCTACGTG	AGCTACACTT	CR_9281
+	GGTCTACGTG	ACGCATT	SH_53_98
+	GGTCTACGTG	GTATGCAT	SH_58
+	GGTCTACGTG	CACATGTCT	CAN_24
+	GGTCTACGTG	TGTGCACGAT	CAN_04
+	GGTCTACGTG	GCATCAT	CAN_23
+	GGTCTACGTG	ATGCTGTT	CAN_22
+	GGTCTACGTG	CATGACCTT	HR_7689
+	GGTCTACGTG	TGCAGTGAGT	UC_7662
+	GATACCG	CTAACGT	M_1_98
+	GATACCG	TCGGTACT	SH_520_97
+	GATACCG	GATCGTTGT	CAN_07
+	GATACCG	AGCTACACTT	R_33
+	GATACCG	ACGCATT	CAN_21
+	GATACCG	GTATGCAT	K_3598
+	GATACCG	CACATGTCT	HR_7712
+	GATACCG	TGTGCACGAT	CAN_08
+	GATACCG	GCATCAT	M_7_97
+	GATACCG	ATGCTGTT	M_5_97
+	GATACCG	CATGACCTT	D_7117
+	GATACCG	TGCAGTGAGT	K_3590
+	AGCGTTGG	CTAACGT	CAN_12
+	AGCGTTGG	TCGGTACT	C_7
+	AGCGTTGG	GATCGTTGT	K_3623
+	AGCGTTGG	AGCTACACTT	SH_513
+	AGCGTTGG	ACGCATT	HR_7703
+	AGCGTTGG	GTATGCAT	D_7092
+	AGCGTTGG	CACATGTCT	M_20_97
+	AGCGTTGG	TGTGCACGAT	K_3608
+	AGCGTTGG	GCATCAT	SH_520_98
+	AGCGTTGG	ATGCTGTT	H_2
+	AGCGTTGG	CATGACCTT	K_3588
+	AGCGTTGG	TGCAGTGAGT	HR_7691
+	CTGCAACTG	CTAACGT	CAN_13
+	CTGCAACTG	TCGGTACT	HR_7587
+	CTGCAACTG	GATCGTTGT	CAN_14
+	CTGCAACTG	AGCTACACTT	CR_9249
+	CTGCAACTG	ACGCATT	SH_519_97
+	CTGCAACTG	GTATGCAT	K_3576
+	CTGCAACTG	CACATGTCT	K_3566
+	CTGCAACTG	TGTGCACGAT	UC_7655
+	CTGCAACTG	GCATCAT	CAN_15
+	CTGCAACTG	ATGCTGTT	HR_7684
+	CTGCAACTG	CATGACCTT	M_3_97
+	CTGCAACTG	TGCAGTGAGT	R_38
+	TCATGGTCAG	CTAACGT	SH_54_98
+	TCATGGTCAG	TCGGTACT	SH_518_97
+	TCATGGTCAG	GATCGTTGT	SH_57_97
+	TCATGGTCAG	AGCTACACTT	CAN_18
+	TCATGGTCAG	ACGCATT	K_3606
+	TCATGGTCAG	GTATGCAT	CAN_02
+	TCATGGTCAG	CACATGTCT	K_3621
+	TCATGGTCAG	TGTGCACGAT	SH_512
+	TCATGGTCAG	GCATCAT	SH_52_98
+	TCATGGTCAG	ATGCTGTT	UC_7632
+	TCATGGTCAG	CATGACCTT	CAN_16
+	TCATGGTCAG	TGCAGTGAGT	UC_7638
+
+	Index Group 9
+	CCGAATG	CTAACGT	HR_7692
+	CCGAATG	TCGGTACT	M_15_97
+	CCGAATG	GATCGTTGT	K_3602
+	CCGAATG	AGCTACACTT	M_16_97
+	CCGAATG	ACGCATT	HR_7695
+	CCGAATG	GTATGCAT	M_1_97
+	TTAGGCAG	CTAACGT	HR_7707
+	TTAGGCAG	TCGGTACT	M_9_97
+	TTAGGCAG	GATCGTTGT	K_3619
+	TTAGGCAG	AGCTACACTT	HR_7710
+	TTAGGCAG	ACGCATT	PX_4674
+	AACTCGTCG	CTAACGT	CAN_28
+	AACTCGTCG	TCGGTACT	M_7_98
+	AACTCGTCG	GATCGTTGT	C_2
+	AACTCGTCG	AGCTACACTT	PX_4690
+	AACTCGTCG	ACGCATT	CR_9225
+	GGTCTACGTG	CTAACGT	HR_7686
+	GGTCTACGTG	TCGGTACT	M_6_98
+	GGTCTACGTG	GATCGTTGT	K_3578
+	GGTCTACGTG	AGCTACACTT	UC_7650
+	GGTCTACGTG	ACGCATT	CR_9285
+	GATACCG	CTAACGT	M_19_97
+	GATACCG	TCGGTACT	HR_7687
+	GATACCG	GATCGTTGT	HR_7700
+	GATACCG	AGCTACACTT	M_12_98
+	GATACCG	ACGCATT	K_3580
+	AGCGTTGG	CTAACGT	K_3582
+	AGCGTTGG	TCGGTACT	M_3_98
+	AGCGTTGG	GATCGTTGT	K_3581
+	AGCGTTGG	AGCTACACTT	K_3570
+	AGCGTTGG	ACGCATT	M_5_98
+	CTGCAACTG	CTAACGT	HR_7713
+	CTGCAACTG	TCGGTACT	C_6
+	CTGCAACTG	GATCGTTGT	C_44
+	CTGCAACTG	AGCTACACTT	M_9_98
+	CTGCAACTG	ACGCATT	HR_7702
+	TCATGGTCAG	CTAACGT	M_8
+	TCATGGTCAG	TCGGTACT	K_3594
+	TCATGGTCAG	GATCGTTGT	K_3584
+	TCATGGTCAG	AGCTACACTT	K_3586
+	TCATGGTCAG	ACGCATT	M_4_97
+
+
+
+
+Run fastqc on some (or all) samples to make sure adapter contamination has been removed
+
+
+Step5: Unzip individual sample files. Bowtie aligner cannot process g-zipped files
+	- "*" is a wildcard. This means that it doesn't matter what sample ID comes before the ".fq.gz", gunzip will decompress all files that are g-zipped. 
+
+	gunzip /mnt/lustre/mel/kwojtusik/StripeRAD/demulti_samples/*.fq.gz
+	
+	
+
+Step 6: Create Index for reference genome 
+	- Can do this at any time, and only need to do it once.
+
+	bowtie2-build -f GCA_004916995.1_NCSU_SB_2.0_genomic.fna striper_index &> bowtie_index.oe
+
+
+Step 7: Create a "filelist" to run for-loops in the next steps.
+		- A filelist is just a list of all the files you want the program to look at. In this case it is a list of all the samples ID's. 
+		- Save as filelist.txt
+		- It should one column. (only listed as 4 to save space)
+
+C_1			D_7127		K_2993		P_37		UC_7631
+C_11		D_7128		K_3564		P_38		UC_7632
+C_17		D_7129		K_3566		P_4			UC_7633
+C_2			D_7130		K_3568		P_5			UC_7634
+C_3			D_7131		K_3570		P_6			UC_7635
+C_4			D_7132		K_3572		P_7			UC_7636
+C_44		D_7133		K_3574		P_8			UC_7637
+C_6			D_7134		K_3576		P_9			UC_7638
+C_7			D_7135		K_3578		PX_4674		UC_7639
+CAN_01		D_7136		K_3580		PX_4690		UC_7640
+CAN_02		D_7137		K_3581		PX_4709		UC_7641
+CAN_03		D_7138		K_3582		R_1			UC_7642
+CAN_04		H_10		K_3584		R_10		UC_7643
+CAN_05		H_11		K_3586		R_18		UC_7645
+CAN_06		H_12		K_3588		R_2			UC_7646
+CAN_07		H_13		K_3590		R_22		UC_7647
+CAN_08		H_14		K_3592		R_24		UC_7648
+CAN_09		H_15		K_3594		R_25		UC_7650
+CAN_10		H_16		K_3596		R_26		UC_7651
+CAN_11		H_17		K_3598		R_27		UC_7652
+CAN_12		H_18		K_3600		R_29		UC_7654
+CAN_13		H_2			K_3602		R_3			UC_7655
+CAN_14		H_21		K_3604		R_33		UC_7656
+CAN_15		H_22		K_3606		R_34		UC_7657
+CAN_16		H_23		K_3608		R_38		UC_7658
+CAN_17		H_25		K_3610		R_4			UC_7659
+CAN_18		H_26		K_3612		R_5			UC_7660G
+CAN_19		H_27		K_3614		R_6			UC_7661
+CAN_20		H_28		K_3615		R_7			UC_7662
+CAN_21		H_29		K_3616		R_8			UC_7663
+CAN_22		H_3			K_3618		R_9			UC_7664
+CAN_23		H_32		K_3619		SH_51_97	UC_7665
+CAN_24		H_35		K_3620		SH_51_98	UC_7666
+CAN_25		H_36		K_3621		SH_510		UC_7667
+CAN_26		H_39		K_3622		SH_511		UC_7668
+CAN_27		H_4			K_3623		SH_512		UC_7669
+CAN_28		H_40		K_3624		SH_513		UC_7670
+CAN_29		H_41		K_3625		SH_514_98	UC_7671
+CAN_30		H_42		K_3627		SH_515_98	UC_7672
+CR_9224		H_43		K_3628		SH_516_97	UC_7673
+CR_9225		H_44		K_3629		SH_516_98	UC_7675
+CR_9229		H_45		K_3630		SH_517	
+CR_9232		H_46		M_11		SH_518_97	
+CR_9233		H_47		M_12_97		SH_518_98	
+CR_9234		H_5			M_12_98		SH_519_97	
+CR_9235		H_50		M_13		SH_519_98	
+CR_9237		H_51		M_14		SH_52_97	
+CR_9248		H_53		M_15_97		SH_52_98	
+CR_9249		H_54		M_15_98		SH_520_97	
+CR_9250		H_57		M_16_97		SH_520_98	
+CR_9252		H_58		M_16_98		SH_53_97	
+CR_9260		H_59		M_17_98		SH_53_98	
+CR_9262		H_6			M_17_97		SH_54_97	
+CR_9263		H_60		M_19_97		SH_54_98	
+CR_9265		H_61		M_19_98		SH_55	
+CR_9270		H_62		M_1_97		SH_56	
+CR_9272		H_64		M_1_98		SH_57_97	
+CR_9277		H_65		M_2_97		SH_57_98	
+CR_9280		H_66		M_2_98		SH_58	
+CR_9281		H_7			M_20_97		SH_59	
+CR_9283		H_8			M_20_98		UB_1	
+CR_9284		H_9			M_3_97		UB_10	
+CR_9285		HR_7578		M_3_98		UB_11	
+CR_9287		HR_7579		M_4_97		UB_12	
+CR_9288		HR_7581		M_5_97		UB_13	
+CR_9289		HR_7582		M_5_98		UB_14	
+CR_9290		HR_7585		M_6_97		UB_15	
+CR_9291		HR_7586		M_6_98		UB_17	
+CR_9293		HR_7587		M_7_97		UB_18	
+CR_9294		HR_7588		M_7_98		UB_19	
+CR_9295		HR_7589		M_8			UB_2	
+CR_9296		HR_7590		M_9_97		UB_20	
+CR_9297		HR_7682		M_9_98		UB_21	
+D_6992		HR_7684		P_1			UB_22	
+D_7001		HR_7686		P_10		UB_23	
+D_7002		HR_7687		P_11		UB_24	
+D_7003		HR_7689		P_12		UB_25	
+D_7004		HR_7690		P_13		UB_26	
+D_7005		HR_7691		P_14		UB_27	
+D_7008		HR_7692		P_15		UB_28	
+D_7019		HR_7693		P_16		UB_29	
+D_7023		HR_7694		P_17		UB_3	
+D_7025		HR_7695		P_18		UB_30	
+D_7026		HR_7697		P_19		UB_31	
+D_7032		HR_7698		P_20		UB_32	
+D_7033		HR_7699		P_21		UB_33	
+D_7034		HR_7700		P_22		UB_34	
+D_7047		HR_7701		P_23		UB_35	
+D_7078		HR_7702		P_24		UB_37	
+D_7092		HR_7703		P_25		UB_38	
+D_7096		HR_7704		P_26		UB_39	
+D_7103		HR_7705		P_28		UB_4	
+D_7107		HR_7706		P_29		UB_40	
+D_7108		HR_7707		P_30		UB_41	
+D_7117		HR_7708		P_31		UB_42	
+D_7121		HR_7709		P_32		UB_43	
+D_7122		HR_7710		P_33		UB_46	
+D_7123		HR_7712		P_34		UB_47	
+D_7124		HR_7713		P_35		UB_7	
+D_7126		HR_7714		P_36		UB_8	
+
+
+
+Step 8: Align reads to indexed genome
+		- For loop for aligning all samples
+		- This will align all your samples to the indexed genome and make SAM files
+		- Make a directory called "aligned" for the SAM files to live in.
+		
+
+	for IND in `cat filelist.txt`; do
+
+	bowtie2 -p 24 -q --phred33 --end-to-end --very-sensitive --fr --time -x /mnt/lustre/mel/kwojtusik/StripeRAD/genome/striper_fasta/fasta_genbank/striper_index -1 /mnt/lustre/mel/kwojtusik/StripeRAD/demulti_samples/${IND}.1.fq -2 /mnt/lustre/mel/kwojtusik/StripeRAD/demulti_samples/${IND}.2.fq -S /mnt/lustre/mel/kwojtusik/StripeRAD/alignments/${IND}.sam
+
+	done
+
+
+Step 9: Remove reads with multiple alignments: 
+		- Use same 'filelist.txt' from previous step to remove reads with multiple alignments	
+		- This will create BAM files, so make a new directory to put them in. In this case I made one called "bam" within the aligned directory.
+
+	for IND in `cat filelist.txt`; do
+
+	cd ~/StripeRAD/library/aligned
+	grep -v XS:i: ${IND}.sam > /mnt/home/mel/kwojtusik/StripeRAD/library_1/aligned/${IND}.xs.sam #####Removes alignments with multiple hits
+
+	samtools view -bS ${IND}.xs.sam > /mnt/home/mel/kwojtusik/StripeRAD/library_1/aligned/bam/${IND}.bam
+
+	done
+ 
+
+Step 10: Sort Bam files otherwise gstacks won't work
+
+ 	for IND in `cat filelist.txt`; do
+
+	samtools sort -o /mnt/lustre/mel/kwojtusik/StripeRAD/alignments/bamfiles/${IND}.bam -@ 24 /mnt/lustre/mel/kwojtusik/StripeRAD/alignments/bamfiles/${IND}.bam
+
+	done
+
+
+Step 10: Make a Population Map for gstacks and Populations.
+		- Follow Directions on stacks website on how make a population map.
+		- In short it is a tsv file with a list of your samples and the "population" they belong to. Separated by a tab
+		- Save as .tsv
+
+Step 11: gstacks
+	- Calls SNPs and makes a catalog for next program "populations" to use.
+	- Need to make a Population map for gstacks to run.
+
+	#!/bin/bash
+	#SBATCH --job-name="gstacks"
+	#SBATCH --nodes=1
+	#SBATCH --mail-type=ALL
+	#SBATCH --mail-user=kristopher.wojtusik@unh.edu
+	
+	module load anaconda/colsa
+	
+	conda activate stacks-2.4
+	
+	gstacks -t 24 --details -I /mnt/lustre/mel/kwojtusik/StripeRAD/aligned/bam -M /mnt/lustre/mel/kwojtusik/StripeRAD/info/Pop_Map_All.tsv -O /mnt/lustre/mel/kwojtusik/StripeRAD/gstacks/	no_filter_all_years
+
+
+Step 12: Populations
+	- Will calculate population statistics, output files in various formats for downstrean analyses (structure, genepop, vcf, etc)
+	- Can also do some SNP filtering.
+	- Don't do the filtering all at once, do it iteratively, one at time to see how it affects SNP calling.
+	- In general it is a better idea to filter the SNPs before filtering the individuals. 
+	- Run populations with no filtering to see how many SNPs are called and to make a VCF file
+	- Use VCCFtools to start iltering things, make a new VCF every time to feed back into programs.
+	- Keep track of filters and results used.
+
+	###This is populations with no filter, just making a vcf file and giving you how many snps there are.
+
+	#!/bin/bash
+	#SBATCH --job-name="populations "
+	#SBATCH --nodes=1
+	#SBATCH --mail-type=ALL
+	#SBATCH --mail-user=kristopher.wojtusik@unh.edu
+
+	module purge
+
+	module load anaconda/colsa
+
+	conda activate stacks-2.4
+
+	populations -P /mnt/lustre/mel/kwojtusik/StripeRAD/gstacks/no_filter_all_years -O /mnt/lustre/mel/kwojtusik/StripeRAD/stacks_populations/no_filter -M /mnt/lustre/mel/kwojtusik/StripeRAD/info -vcf
